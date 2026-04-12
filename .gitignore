@@ -1,0 +1,43 @@
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug artifacts from session
+diag-hyperliquid.js
+diag-screenshot.png
+
+# OMC state (ephemeral)
+.omc/state/
+.omc/prd.json
+.omc/progress.txt
+
+# Claude project config
+.claude/
+
+# Runtime logs
+dry-run.log
+*.log
