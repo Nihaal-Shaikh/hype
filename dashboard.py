@@ -342,6 +342,84 @@ def render_positions_and_balances(perp: dict[str, Any], spot: dict[str, Any]) ->
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
+# --- Scanner panel (Phase 5D) ---------------------------------------------
+
+def render_scanner_panel() -> None:
+    """Live view of the scanner/run_live process state.
+
+    Reads `.scanner-state.json` written by run_scanner.py each tick.
+    Graceful when file absent — shows "scanner not running".
+    """
+    from scanner_io import read_scanner_state, state_age_seconds
+
+    st.subheader("🤖 Scanner live state")
+    state = read_scanner_state()
+    if state is None:
+        st.info(
+            "No scanner state file found. Start the scanner in a terminal:\n"
+            "`PYTHONPATH=. python run_scanner.py --interval-seconds 300`"
+        )
+        return
+
+    age = state_age_seconds(state)
+    age_str = f"{age:.0f}s ago" if age is not None else "unknown"
+    stale = age is not None and age > 60 * 10  # 10 min threshold
+
+    header_col, meta_col = st.columns([2, 1])
+    with header_col:
+        st.caption(
+            f"Mode: **{state.get('mode', '?')}**  ·  "
+            f"Strategy: `{state.get('strategy', '?')}`  ·  "
+            f"Universe: {state.get('universe_size', '?')} markets"
+        )
+    with meta_col:
+        label = f"{'🔴 Stale' if stale else '🟢 Fresh'} · {age_str}"
+        st.caption(label)
+
+    session = state.get("session", {}) or {}
+    position = session.get("position")
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Session PnL", money(float(session.get("session_pnl", 0.0)), 4))
+    m2.metric("Trades", session.get("trade_count", 0))
+    m3.metric("Status", "HOLDING" if session.get("is_holding") else "FLAT")
+    started = session.get("started_at", "")
+    m4.metric("Started", started.split("T")[1][:8] + "Z" if "T" in started else "—")
+
+    if position is not None:
+        p1, p2, p3, p4 = st.columns(4)
+        p1.metric("Coin", position.get("coin", "?"))
+        p2.metric("Entry", money(float(position.get("entry_price", 0)), 4))
+        p3.metric("Size", f"{float(position.get('size', 0)):.5f}")
+        p4.metric("Notional", money(float(position.get("notional", 0))))
+
+    signals = state.get("last_signals", []) or []
+    if signals:
+        buys = sum(1 for s in signals if s.get("signal") == "buy")
+        sells = sum(1 for s in signals if s.get("signal") == "sell")
+        holds = sum(1 for s in signals if s.get("signal") == "hold")
+        st.caption(f"Last tick signals: 🟢 {buys} buy · 🔴 {sells} sell · ⚪ {holds} hold")
+
+        rows = []
+        for s in signals:
+            sig = s.get("signal", "?")
+            icon = {"buy": "🟢", "sell": "🔴", "hold": "⚪"}.get(sig, "❓")
+            rows.append({
+                "": icon,
+                "Symbol": s.get("symbol", "?"),
+                "Class": s.get("asset_class", "?"),
+                "Signal": sig.upper(),
+                "Open": "✅" if s.get("open_now") else "❌",
+                "Mid": s.get("current_mid"),
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    trades = session.get("trades", []) or []
+    if trades:
+        st.caption(f"Recent trades ({len(trades)}):")
+        st.dataframe(pd.DataFrame(trades), use_container_width=True, hide_index=True)
+
+
 # --- Entrypoint ------------------------------------------------------------
 
 def main() -> None:
@@ -368,6 +446,8 @@ def main() -> None:
     render_chart(candles, symbol, interval, ema_period)
     st.divider()
     render_positions_and_balances(account["perp"], account["spot"])
+    st.divider()
+    render_scanner_panel()
 
 
 if __name__ == "__main__":

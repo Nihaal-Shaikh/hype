@@ -41,3 +41,6 @@ diag-screenshot.png
 # Runtime logs
 dry-run.log
 *.log
+
+# Scanner runtime state (Phase 5D)
+.scanner-state.json

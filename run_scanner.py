@@ -40,6 +40,7 @@ from live_state import (
     is_duplicate_signal,
 )
 from scanner import ScanResult, scan_universe
+from scanner_io import build_state, write_scanner_state
 from strategy import Signal, Strategy
 from strategies.ema_crossover import EmaCrossover, EmaCrossoverConfig
 
@@ -213,8 +214,8 @@ def _run_one_tick(
     lookback_hours: int,
     is_live: bool,
     logger: logging.Logger,
-) -> None:
-    """Execute one scanner tick."""
+) -> list[ScanResult]:
+    """Execute one scanner tick. Returns the scan results for state snapshotting."""
     try:
         results = scan_universe(info, strategy, markets, interval, lookback_hours)
 
@@ -232,17 +233,19 @@ def _run_one_tick(
                 _execute_sell(info, exchange, sell, state, is_live, logger)
             else:
                 logger.info("Holding %s — no SELL signal this tick", held)
-            return
+            return results
 
         buy = _pick_buy(results)
         if buy is None:
             logger.info("No BUY signals across %d markets", len(results))
-            return
+            return results
 
         _execute_buy(info, exchange, buy, state, config, is_live, logger)
+        return results
 
     except Exception as exc:
         logger.error("Unhandled exception in tick: %s", exc, exc_info=True)
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         while True:
-            _run_one_tick(
+            results = _run_one_tick(
                 info=info,
                 exchange=exchange,
                 strategy=strategy,
@@ -315,6 +318,17 @@ def main(argv: list[str] | None = None) -> int:
                 is_live=args.live,
                 logger=logger,
             )
+            try:
+                snap = build_state(
+                    mode=mode,
+                    strategy_name=strategy.describe(),
+                    session=state,
+                    last_results=results,
+                    universe_size=len(markets),
+                )
+                write_scanner_state(snap)
+            except Exception as exc:
+                logger.warning("Failed to write scanner state file: %s", exc)
             logger.info("Sleeping %ds... | %s", args.interval_seconds, state.summary())
             time.sleep(args.interval_seconds)
     except KeyboardInterrupt:
