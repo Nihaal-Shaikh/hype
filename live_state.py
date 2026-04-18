@@ -53,6 +53,7 @@ class SessionState:
         self.trade_count += 1
         self.trades.append({
             "side": "BUY",
+            "coin": coin,
             "price": entry_price,
             "size": size,
             "notional": notional,
@@ -69,6 +70,7 @@ class SessionState:
         self.trade_count += 1
         self.trades.append({
             "side": "SELL",
+            "coin": self.position.coin,
             "price": exit_price,
             "size": self.position.size,
             "notional": proceeds,

@@ -420,6 +420,66 @@ def render_scanner_panel() -> None:
         st.dataframe(pd.DataFrame(trades), use_container_width=True, hide_index=True)
 
 
+# --- History panel (Phase 5G) ---------------------------------------------
+
+def render_history_panel() -> None:
+    """Real equity curve + trade log from SQLite history DB."""
+    import history
+
+    st.subheader("📈 Session history (SQLite)")
+    db_path = history.DEFAULT_DB_PATH
+    if not db_path.exists():
+        st.info(
+            "No history DB yet. Start the scanner to begin logging ticks/trades:\n"
+            "`PYTHONPATH=. python run_scanner.py --interval-seconds 300`"
+        )
+        return
+
+    try:
+        with history.connect() as conn:
+            ticks = history.read_ticks(conn)
+            trades = history.read_trades(conn)
+    except Exception as exc:
+        st.warning(f"Failed to read history DB: {exc}")
+        return
+
+    if not ticks:
+        st.info("History DB exists but has no ticks yet. Scanner will start logging on its next tick.")
+        return
+
+    # --- Equity curve ---
+    df_ticks = pd.DataFrame(ticks)
+    df_ticks["ts"] = pd.to_datetime(df_ticks["ts"])
+    df_ticks["equity"] = 50.0 + df_ticks["session_pnl"]  # starting capital baseline
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df_ticks["ts"], y=df_ticks["equity"],
+        mode="lines", name="Equity",
+        line=dict(width=2, color="#26a69a"),
+    ))
+    fig.update_layout(
+        height=280,
+        margin=dict(l=10, r=10, t=10, b=10),
+        xaxis_title="Time (UTC)",
+        yaxis_title="Equity ($50 base + session PnL)",
+        hovermode="x unified",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Ticks logged", len(ticks))
+    c2.metric("Trades logged", len(trades))
+    last_pnl = float(df_ticks["session_pnl"].iloc[-1])
+    c3.metric("Latest session PnL", money(last_pnl, 4))
+
+    if trades:
+        st.caption(f"Trade log ({len(trades)}):")
+        df_trades = pd.DataFrame(trades)
+        # Reverse so newest on top for scanning
+        st.dataframe(df_trades.iloc[::-1], use_container_width=True, hide_index=True)
+
+
 # --- Entrypoint ------------------------------------------------------------
 
 def main() -> None:
@@ -448,6 +508,8 @@ def main() -> None:
     render_positions_and_balances(account["perp"], account["spot"])
     st.divider()
     render_scanner_panel()
+    st.divider()
+    render_history_panel()
 
 
 if __name__ == "__main__":

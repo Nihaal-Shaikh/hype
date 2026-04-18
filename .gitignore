@@ -44,3 +44,8 @@ dry-run.log
 
 # Scanner runtime state (Phase 5D)
 .scanner-state.json
+
+# History DB (Phase 5G)
+.hype.db
+.hype.db-wal
+.hype.db-shm

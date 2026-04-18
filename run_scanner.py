@@ -39,6 +39,7 @@ from live_state import (
     compute_order_params,
     is_duplicate_signal,
 )
+import history
 from scanner import ScanResult, scan_universe
 from scanner_io import build_state, write_scanner_state
 from strategy import Signal, Strategy
@@ -322,6 +323,13 @@ def main(argv: list[str] | None = None) -> int:
     state = SessionState(coin="")
     config = ExecutionConfig()
 
+    # Initialize history DB (idempotent)
+    try:
+        history.init_db()
+        logger.info("History DB ready at %s", history.DEFAULT_DB_PATH)
+    except Exception as exc:
+        logger.warning("Failed to init history DB: %s — continuing without history", exc)
+
     markets = build_universe(info, logger=logger)
     logger.info("Universe: %d markets loaded", len(markets))
     for m in markets:
@@ -364,6 +372,15 @@ def main(argv: list[str] | None = None) -> int:
                 write_scanner_state(snap)
             except Exception as exc:
                 logger.warning("Failed to write scanner state file: %s", exc)
+
+            try:
+                with history.connect() as hconn:
+                    history.log_tick(hconn, snap)
+                    new_trades = history.sync_trades(hconn, state.trades)
+                    if new_trades:
+                        logger.info("History: %d new trades logged", new_trades)
+            except Exception as exc:
+                logger.warning("Failed to write history DB: %s", exc)
             logger.info("Sleeping %ds... | %s", args.interval_seconds, state.summary())
             time.sleep(args.interval_seconds)
     except KeyboardInterrupt:
