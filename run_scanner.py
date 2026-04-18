@@ -43,6 +43,21 @@ from scanner import ScanResult, scan_universe
 from scanner_io import build_state, write_scanner_state
 from strategy import Signal, Strategy
 from strategies.ema_crossover import EmaCrossover, EmaCrossoverConfig
+from strategies.rsi import Rsi, RsiConfig
+
+
+# Default mapping: trend-following for crypto/index, mean-reversion for rest.
+def build_default_strategies(
+    fast: int = 9, slow: int = 21
+) -> dict[AssetClass, Strategy]:
+    ema = EmaCrossover(EmaCrossoverConfig(fast_period=fast, slow_period=slow))
+    return {
+        AssetClass.CRYPTO: ema,
+        AssetClass.INDEX: ema,
+        AssetClass.COMMODITY: Rsi(Rsi.COMMODITY),
+        AssetClass.STOCK: Rsi(Rsi.STOCK),
+        AssetClass.FOREX: Rsi(),
+    }
 
 
 # Curated universe — diverse asset classes, liquid markets only.
@@ -259,6 +274,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--live", action="store_true", default=False,
                         help="Enable real orders (default: dry-run)")
+    parser.add_argument(
+        "--mode", choices=["mixed", "ema", "rsi"], default="mixed",
+        help="Strategy selection: mixed=per-asset-class (EMA crypto/index, RSI rest), "
+             "ema=EMA for all, rsi=RSI for all",
+    )
     parser.add_argument("--fast", type=int, default=9)
     parser.add_argument("--slow", type=int, default=21)
     parser.add_argument("--interval", default="1h")
@@ -275,15 +295,30 @@ def main(argv: list[str] | None = None) -> int:
     divider = "=" * 60
     logger.info(divider)
     logger.info("SCANNER LOOP — %s", mode)
-    logger.info("Strategy: EMA %d/%d | Interval: %s | Tick: %ds",
-                args.fast, args.slow, args.interval, args.interval_seconds)
+
+    # Build strategy spec per --mode
+    strategy: Strategy | dict[AssetClass, Strategy]
+    if args.mode == "ema":
+        strategy = EmaCrossover(EmaCrossoverConfig(fast_period=args.fast, slow_period=args.slow))
+        strat_label = f"EMA {args.fast}/{args.slow} (all classes)"
+    elif args.mode == "rsi":
+        strategy = Rsi()
+        strat_label = "RSI 14/30/70 (all classes)"
+    else:  # mixed
+        strategy = build_default_strategies(fast=args.fast, slow=args.slow)
+        strat_label = (
+            f"MIXED — EMA {args.fast}/{args.slow} for crypto/index, "
+            f"RSI for commodity/stock/forex"
+        )
+
+    logger.info("Strategy: %s", strat_label)
+    logger.info("Interval: %s | Tick: %ds", args.interval, args.interval_seconds)
     logger.info(divider)
     if args.live:
         logger.warning("LIVE MODE — real orders will be placed!")
 
     info = make_info(ACTIVE_DEXES)
     exchange = make_exchange(ACTIVE_DEXES) if args.live else None
-    strategy = EmaCrossover(EmaCrossoverConfig(fast_period=args.fast, slow_period=args.slow))
     state = SessionState(coin="")
     config = ExecutionConfig()
 
@@ -321,7 +356,7 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 snap = build_state(
                     mode=mode,
-                    strategy_name=strategy.describe(),
+                    strategy_name=strat_label,
                     session=state,
                     last_results=results,
                     universe_size=len(markets),
