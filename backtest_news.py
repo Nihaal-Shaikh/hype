@@ -150,8 +150,14 @@ def main(argv: list[str] | None = None) -> int:
     archive_paths = [Path(a) for a in args.archive]
     universe = [m.strip() for m in args.markets.split(",") if m.strip()]
 
-    # Detect synthetic fixtures by name prefix
-    synthetic = any("fixture" in str(p) or "sample" in str(p) for p in archive_paths)
+    # Heuristic: archive is synthetic if path contains "synthetic" OR both
+    # "fixture" and a 60d/_60d marker. The 6A-prime hand-crafted fixtures
+    # are flagged; real_archive.jsonl (lives in tests/fixtures/ but from
+    # fetch_archive.py) is NOT flagged.
+    synthetic = any(
+        "synthetic" in str(p) or "_60d" in str(p) or "sample" in str(p)
+        for p in archive_paths
+    )
 
     print(f"Loading archives: {archive_paths}")
     posts: list[NewsPost] = []
