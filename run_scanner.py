@@ -61,17 +61,35 @@ def build_default_strategies(
     }
 
 
-# Curated universe — diverse asset classes, liquid markets only.
+# Curated universe — 20 markets across crypto, commodities, stocks,
+# forex, indices. Phase 6A expanded from 9 to 20 to match the news
+# classifier's market whitelist (ADR #3: single source of truth).
 CURATED_UNIVERSE: list[tuple[str, str]] = [
+    # Crypto (core dex)
     ("", "BTC"),
     ("", "ETH"),
     ("", "SOL"),
     ("", "HYPE"),
-    ("xyz", "xyz:CL"),
+    # Commodities
     ("xyz", "xyz:GOLD"),
+    ("xyz", "xyz:SILVER"),
+    ("xyz", "xyz:CL"),            # WTI crude
+    ("xyz", "xyz:BRENTOIL"),
+    ("xyz", "xyz:NATGAS"),
+    ("xyz", "xyz:COPPER"),
+    # US equities
     ("xyz", "xyz:TSLA"),
     ("xyz", "xyz:NVDA"),
+    ("xyz", "xyz:AAPL"),
+    ("xyz", "xyz:MSFT"),
+    ("xyz", "xyz:GOOGL"),
+    ("xyz", "xyz:AMZN"),
+    ("xyz", "xyz:META"),
+    # Indices
     ("xyz", "xyz:SP500"),
+    # Forex
+    ("xyz", "xyz:JPY"),
+    ("xyz", "xyz:EUR"),
 ]
 
 

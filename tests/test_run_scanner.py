@@ -68,6 +68,20 @@ def test_find_sell_for_ignores_non_sell():
 
 # --- build_universe ------------------------------------------------------
 
+def test_curated_universe_has_20_tickers():
+    """Phase 6A R2: universe expanded to 20 tickers for news-bot coverage."""
+    assert len(CURATED_UNIVERSE) == 20
+    # No duplicates
+    assert len(set(CURATED_UNIVERSE)) == 20
+    # Every entry is a (dex, symbol) tuple of strings
+    for entry in CURATED_UNIVERSE:
+        assert isinstance(entry, tuple)
+        assert len(entry) == 2
+        dex, sym = entry
+        assert isinstance(dex, str)
+        assert isinstance(sym, str) and sym
+
+
 def test_build_universe_curated_default():
     info = MagicMock()
     calls = []

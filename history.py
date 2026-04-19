@@ -65,11 +65,14 @@ def connect(path: Path = DEFAULT_DB_PATH) -> Iterator[sqlite3.Connection]:
 
 
 def init_db(path: Path = DEFAULT_DB_PATH) -> None:
-    """Create tables if not exist. Idempotent."""
+    """Create tables if not exist. Idempotent. Also applies Phase 6 news schema."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with connect(path) as conn:
         conn.executescript(_SCHEMA)
+        # Phase 6 news tables — co-located in the same DB
+        from news.schema import apply_news_schema
+        apply_news_schema(conn)
 
 
 def log_tick(conn: sqlite3.Connection, snapshot: dict[str, Any]) -> None:
