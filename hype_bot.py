@@ -160,57 +160,77 @@ def classify(dex: str, symbol: str) -> AssetClass:
 # --- Market hours stub ---------------------------------------------------
 
 def is_open_now(asset_class: AssetClass, now: datetime | None = None) -> bool:
-    """Is the given asset class currently tradable?
+    """Is the given asset class tradable on Hyperliquid right now?
 
-    Phase 3 stub: the COMMODITY case encodes the exact CME Globex WTI
-    schedule (see tests/test_hours.py). Other asset classes use loose
-    heuristics, which is acceptable because Phase 3's only write test
-    targets CL specifically. Phase 5 will replace this with
-    pandas_market_calendars for full accuracy across all classes.
+    **Corrected in Phase 6A follow-up:** Hyperliquid's xyz perps trade
+    **24/7** on their own orderbook, independent of CME/NYSE hours. The
+    underlying reference market schedule only affects liquidity and
+    gap-risk, NOT whether orders execute. Previously this function
+    returned False for commodities on weekends — that was wrong and led
+    to the scanner incorrectly skipping real trading opportunities.
 
-    All times are UTC.
+    Use `is_prime_session()` below for CME/NYSE-style liquidity gating.
+
+    All asset classes (CRYPTO, STOCK, COMMODITY, FOREX, INDEX) return
+    True on Hyperliquid. UNKNOWN still returns False (conservative).
+    """
+    del now  # no longer time-gated; arg kept for API compatibility
+    if asset_class == AssetClass.UNKNOWN:
+        return False
+    return True
+
+
+def is_prime_session(
+    asset_class: AssetClass, now: datetime | None = None
+) -> bool:
+    """Is the underlying reference market in its primary session?
+
+    True = deep liquidity, tight spreads, low gap-risk (underlying
+    exchange is actively trading).
+    False = Hyperliquid perp still trades, but with wider spreads,
+    thinner book, and elevated gap-risk when the underlying reopens.
+
+    Use this for opportunity quality gating, NOT for open/closed
+    decisions. Example: scanner may still scan off-hours markets but
+    apply larger stop-loss buffers when `is_prime_session` is False.
+
+    Schedules (all UTC, DST not handled — Phase 7+ will use
+    pandas_market_calendars):
+      CRYPTO:     always True (no underlying)
+      COMMODITY:  CME Globex (Sun 23:00 → Fri 22:00, daily 22-23 break)
+      STOCK:      NYSE RTH approximation (Mon-Fri 13:30-20:00)
+      FOREX:      24/5 (Sun 22:00 → Fri 22:00)
+      INDEX:      same as STOCK (approx)
     """
     if now is None:
         now = datetime.now(timezone.utc)
     assert now.tzinfo is not None, "now must be timezone-aware (UTC preferred)"
 
-    wd = now.weekday()   # Mon=0, ..., Sat=5, Sun=6
+    wd = now.weekday()
     hh = now.hour
     mm = now.minute
     hhmm = hh * 100 + mm
 
     if asset_class == AssetClass.CRYPTO:
-        # 24/7
         return True
 
     if asset_class == AssetClass.COMMODITY:
-        # CL (WTI Crude) on CME Globex — exact schedule per Phase 3 plan Amendment 3:
-        #   Sun 23:00 UTC -> Mon 22:00 UTC  (with 22:00-23:00 UTC daily break)
-        #   Mon 23:00 UTC -> Tue 22:00 UTC  (same break)
-        #   Tue 23:00 UTC -> Wed 22:00 UTC
-        #   Wed 23:00 UTC -> Thu 22:00 UTC
-        #   Thu 23:00 UTC -> Fri 22:00 UTC  (weekend close at 22:00 UTC Fri)
-        #   Saturday: CLOSED all day
-        #   Sunday before 23:00 UTC: CLOSED
-        if wd == 5:  # Saturday
+        if wd == 5:
             return False
-        if wd == 6:  # Sunday — opens at 23:00 UTC
+        if wd == 6:
             return hh >= 23
-        if wd == 4:  # Friday — closes at 22:00 UTC
+        if wd == 4:
             return hh < 22
-        # Mon-Thu: closed during daily maintenance break 22:00-22:59 UTC
         if hh == 22:
             return False
         return True
 
     if asset_class == AssetClass.STOCK:
-        # NYSE RTH ~ 13:30-20:00 UTC Mon-Fri (varies with DST — loose stub, Phase 5 replaces)
         if wd >= 5:
             return False
         return 1330 <= hhmm < 2000
 
     if asset_class == AssetClass.FOREX:
-        # 24/5: Sun 22:00 UTC -> Fri 22:00 UTC, closed Sat and early Sun
         if wd == 5:
             return False
         if wd == 6:
@@ -220,13 +240,11 @@ def is_open_now(asset_class: AssetClass, now: datetime | None = None) -> bool:
         return True
 
     if asset_class == AssetClass.INDEX:
-        # Approximate same as stocks (SP500, JP225, etc. have their own sessions
-        # — Phase 5 handles per-index accuracy)
         if wd >= 5:
             return False
         return 1330 <= hhmm < 2000
 
-    return False  # UNKNOWN
+    return False
 
 
 # --- Credentials + client factories --------------------------------------

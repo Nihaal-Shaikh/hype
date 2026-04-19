@@ -1,90 +1,92 @@
-"""Tests for hype_bot.is_open_now() — CL schedule boundary conditions.
+"""Tests for hype_bot.is_open_now() + is_prime_session().
 
-Per Phase 3 plan Amendment 3 and Amendment 7, this is the ONE pytest file
-in Phase 3. Scope is deliberately narrow: exactly 8 boundary assertions
-for the WTI Crude (COMMODITY) schedule. Other asset classes are loose
-and not tested here — Phase 5 adds broader coverage.
+Hyperliquid perps trade 24/7 regardless of the underlying's session
+schedule. Updated in Phase 6A follow-up:
+  - is_open_now       returns True for all known asset classes
+  - is_prime_session  encodes the CME/NYSE-style reference schedule
 
-Run with:
-    source venv/bin/activate
-    pytest tests/test_hours.py -v
+Run:  pytest tests/test_hours.py -v
 """
 from datetime import datetime, timezone
 
-from hype_bot import AssetClass, is_open_now
+from hype_bot import AssetClass, is_open_now, is_prime_session
 
 
 def _dt(year: int, month: int, day: int, hour: int, minute: int = 0) -> datetime:
-    """Helper: build a UTC datetime."""
     return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
 
 
-# --- CL (WTI crude) schedule boundary tests ------------------------------
-# CME Globex WTI exact schedule (all UTC):
-#   Sun 23:00 -> Mon 22:00  (with 22:00-23:00 daily break)
-#   Mon 23:00 -> Tue 22:00  (same break)
-#   ...through Thu 23:00 -> Fri 22:00
-#   Saturday: closed all day
-#   Sunday before 23:00: closed
-#
-# Calendar anchor dates used below (2026-04-11 era):
-#   2026-04-11 is Saturday (wd=5)
-#   2026-04-12 is Sunday   (wd=6)
-#   2026-04-13 is Monday   (wd=0)
-#   2026-04-14 is Tuesday  (wd=1)
-#   2026-04-17 is Friday   (wd=4)
+# --- is_open_now: Hyperliquid trades 24/7 for every non-UNKNOWN class ----
 
-
-def test_cl_saturday_closed():
-    """Saturday any time -> closed."""
-    assert is_open_now(AssetClass.COMMODITY, _dt(2026, 4, 11, 1, 30)) is False
-
-
-def test_cl_sunday_before_2300_closed():
-    """Sunday 22:59 UTC -> still closed, session hasn't started."""
-    assert is_open_now(AssetClass.COMMODITY, _dt(2026, 4, 12, 22, 59)) is False
-
-
-def test_cl_sunday_2300_open():
-    """Sunday 23:01 UTC -> session open (Globex week starts)."""
-    assert is_open_now(AssetClass.COMMODITY, _dt(2026, 4, 12, 23, 1)) is True
-
-
-def test_cl_monday_mid_session_open():
-    """Monday 15:00 UTC -> mid-session, open."""
-    assert is_open_now(AssetClass.COMMODITY, _dt(2026, 4, 13, 15, 0)) is True
-
-
-def test_cl_monday_daily_break_closed():
-    """Monday 22:30 UTC -> inside daily maintenance break, closed."""
-    assert is_open_now(AssetClass.COMMODITY, _dt(2026, 4, 13, 22, 30)) is False
-
-
-def test_cl_tuesday_after_break_open():
-    """Tuesday 23:01 UTC -> after daily break, new session, open."""
-    assert is_open_now(AssetClass.COMMODITY, _dt(2026, 4, 14, 23, 1)) is True
-
-
-def test_cl_friday_before_close_open():
-    """Friday 21:59 UTC -> just before weekly close, still open."""
-    assert is_open_now(AssetClass.COMMODITY, _dt(2026, 4, 17, 21, 59)) is True
-
-
-def test_cl_friday_after_close_closed():
-    """Friday 22:01 UTC -> weekly close happened, closed for the weekend."""
-    assert is_open_now(AssetClass.COMMODITY, _dt(2026, 4, 17, 22, 1)) is False
-
-
-# --- Sanity checks for the other asset classes (not in the required 8, ---
-# --- but cheap and catch obvious regressions) -----------------------------
-
-
-def test_crypto_always_open():
-    """Crypto is 24/7."""
+def test_open_now_crypto_anytime():
     assert is_open_now(AssetClass.CRYPTO, _dt(2026, 4, 11, 1, 30)) is True
-    assert is_open_now(AssetClass.CRYPTO, _dt(2026, 4, 12, 22, 59)) is True
 
 
-def test_unknown_always_closed():
-    """Unknown asset class defaults to closed (conservative)."""
+def test_open_now_commodity_saturday():
+    """Previously False. Hyperliquid xyz:CL trades weekends — this must be True."""
+    assert is_open_now(AssetClass.COMMODITY, _dt(2026, 4, 11, 1, 30)) is True
+
+
+def test_open_now_commodity_sunday_before_2300():
+    assert is_open_now(AssetClass.COMMODITY, _dt(2026, 4, 12, 22, 59)) is True
+
+
+def test_open_now_stock_on_weekend():
+    """Hyperliquid single-name perps (xyz:TSLA etc.) trade weekends too."""
+    assert is_open_now(AssetClass.STOCK, _dt(2026, 4, 11, 10, 0)) is True
+
+
+def test_open_now_unknown_still_closed():
+    """Conservative: unknown asset class still returns False."""
     assert is_open_now(AssetClass.UNKNOWN, _dt(2026, 4, 13, 15, 0)) is False
+
+
+# --- is_prime_session: CME/NYSE schedule (liquidity gate, NOT open/close) -
+
+def test_prime_cl_saturday_not_prime():
+    assert is_prime_session(AssetClass.COMMODITY, _dt(2026, 4, 11, 1, 30)) is False
+
+
+def test_prime_cl_sunday_before_2300_not_prime():
+    assert is_prime_session(AssetClass.COMMODITY, _dt(2026, 4, 12, 22, 59)) is False
+
+
+def test_prime_cl_sunday_2300_prime():
+    assert is_prime_session(AssetClass.COMMODITY, _dt(2026, 4, 12, 23, 1)) is True
+
+
+def test_prime_cl_monday_mid_session_prime():
+    assert is_prime_session(AssetClass.COMMODITY, _dt(2026, 4, 13, 15, 0)) is True
+
+
+def test_prime_cl_monday_daily_break_not_prime():
+    assert is_prime_session(AssetClass.COMMODITY, _dt(2026, 4, 13, 22, 30)) is False
+
+
+def test_prime_cl_tuesday_after_break_prime():
+    assert is_prime_session(AssetClass.COMMODITY, _dt(2026, 4, 14, 23, 1)) is True
+
+
+def test_prime_cl_friday_before_close_prime():
+    assert is_prime_session(AssetClass.COMMODITY, _dt(2026, 4, 17, 21, 59)) is True
+
+
+def test_prime_cl_friday_after_close_not_prime():
+    assert is_prime_session(AssetClass.COMMODITY, _dt(2026, 4, 17, 22, 1)) is False
+
+
+def test_prime_crypto_always_prime():
+    assert is_prime_session(AssetClass.CRYPTO, _dt(2026, 4, 11, 1, 30)) is True
+    assert is_prime_session(AssetClass.CRYPTO, _dt(2026, 4, 12, 22, 59)) is True
+
+
+def test_prime_stock_weekend_not_prime():
+    assert is_prime_session(AssetClass.STOCK, _dt(2026, 4, 11, 15, 0)) is False
+
+
+def test_prime_stock_weekday_rth_prime():
+    assert is_prime_session(AssetClass.STOCK, _dt(2026, 4, 13, 15, 0)) is True
+
+
+def test_prime_unknown_not_prime():
+    assert is_prime_session(AssetClass.UNKNOWN, _dt(2026, 4, 13, 15, 0)) is False
